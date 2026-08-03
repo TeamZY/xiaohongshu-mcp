@@ -9,9 +9,9 @@ RUN apk add --no-cache git
 # 复制源码
 COPY . .
 
-# 构建
+# 构建（必须带 stdio build tag，否则会编译到 main.go 的 HTTP 模式而非 main_stdio.go）
 RUN go mod download
-RUN go build -o xhs-mcp-stdio .
+RUN go build -tags stdio -o xhs-mcp-stdio .
 
 # 运行镜像
 FROM alpine:latest
@@ -27,8 +27,18 @@ COPY --from=builder /app/xhs-mcp-stdio /app/xhs-mcp-stdio
 # 创建必要目录
 RUN mkdir -p /app/data /app/images /app/logs
 
+# 让 rod 使用系统已安装的 Chromium，禁止运行时自动下载浏览器
+# alpine 的 chromium 包提供 /usr/bin/chromium；部分版本同时提供 chromium-browser 软链。
+# 这里统一软链到 /usr/bin/chromium-browser，确保 ROD_BROWSER_BIN 一定存在。
+RUN ln -sf /usr/bin/chromium /usr/bin/chromium-browser || true
+# 诊断：确认浏览器二进制真实存在（构建期即可发现路径问题）
+RUN ls -la /usr/bin/chromium /usr/bin/chromium-browser 2>&1 || true
+
 # 设置环境变量
+# ROD_BROWSER_BIN: 指定 rod 使用的浏览器二进制
 ENV ROD_BROWSER_BIN=/usr/bin/chromium-browser
+# ROD_NO_DOWNLOAD: 禁止 rod 在找不到浏览器时自动下载（避免下载进度日志污染 stdout / 断网失败）
+ENV ROD_NO_DOWNLOAD=1
 
 # 运行
 ENTRYPOINT ["/app/xhs-mcp-stdio", "-stdio", "-headless=true"]

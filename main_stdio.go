@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/go-rod/rod/lib/defaults"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sirupsen/logrus"
 	"github.com/xpzouying/xiaohongshu-mcp/configs"
@@ -33,6 +34,10 @@ func main() {
 		binPath = os.Getenv("ROD_BROWSER_BIN")
 	}
 	if binPath != "" {
+		// 全局兜底：即使 headless_browser 封装库内部没正确传递 binPath，
+		// rod 也会使用这个路径，避免触发自动下载。
+		// go-rod v0.116.2 使用 defaults.Bin 作为全局默认浏览器路径。
+		defaults.Bin = binPath
 		logrus.Infof("using browser binary: %s", binPath)
 	} else {
 		logrus.Infof("browser binary is not configured; rod will auto-detect or download Chromium")
@@ -60,12 +65,16 @@ func main() {
 
 // runStdioServer 运行 stdio 模式的 MCP 服务器
 func runStdioServer(service *XiaohongshuService) {
-	// 重要：在 stdio 模式下，stdout 只能用于 MCP JSONRPC 消息
-	// rod 浏览器启动时会输出进度日志到 stdout，需要重定向到 stderr
-	// 保存原始 stdout，用于 MCP 协议
-	originalStdout := os.Stdout
-	// 将 stdout 重定向到 stderr，这样浏览器进度日志不会干扰 MCP
-	os.Stdout = os.Stderr
+	// 重要：在 stdio 模式下，stdout 只能用于 MCP JSONRPC 消息。
+	// go-rod/rod 的 launcher 在启动/下载浏览器时会把进度日志写入底层 fd 1，
+	// 简单的 os.Stdout = os.Stderr 无法拦截。这里在 fd 层面把 fd 1 重定向到 stderr，
+	// 同时把真正的 stdout 副本保留给 MCP 协议（StdioTransport 使用 os.Stdout）。
+	if realStdout, err := redirectStdoutToStderr(); err != nil {
+		logrus.Warnf("failed to redirect stdout to stderr at fd level: %v", err)
+	} else {
+		// 确保进程退出前关闭副本
+		defer realStdout.Close()
+	}
 
 	// 设置日志输出到文件（同时保留 stderr）
 	// 优先使用环境变量 LOG_DIR，否则使用工作目录下的 logs 子目录
@@ -94,9 +103,6 @@ func runStdioServer(service *XiaohongshuService) {
 		}
 	}
 	logrus.SetLevel(logrus.DebugLevel) // 设置调试级别日志
-
-	// 恢复 stdout 用于 MCP 协议
-	os.Stdout = originalStdout
 
 	// 创建 MCP Server
 	server := mcp.NewServer(

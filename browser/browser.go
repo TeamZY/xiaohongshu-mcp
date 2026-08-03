@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/go-rod/rod/lib/defaults"
 	"github.com/sirupsen/logrus"
 	"github.com/xpzouying/headless_browser"
 	"github.com/xpzouying/xiaohongshu-mcp/cookies"
@@ -89,6 +90,17 @@ func NewBrowser(headless bool, options ...Option) *headless_browser.Browser {
 	cfg := &browserConfig{}
 	for _, opt := range options {
 		opt(cfg)
+	}
+
+	// 兜底：确保 rod 使用系统已安装的 Chromium，避免运行时自动下载
+	// （自动下载会把进度日志写入 fd 1，污染 MCP stdio 的 stdout）。
+	// 优先使用显式传入的 binPath，其次使用 ROD_BROWSER_BIN 环境变量。
+	// 注意：go-rod v0.116.2 使用 defaults.Bin 作为全局默认浏览器路径
+	//（launcher.DefaultBrowserBinPath 是该变量在更新版本才引入）。
+	if cfg.binPath != "" {
+		defaults.Bin = cfg.binPath
+	} else if envBin := os.Getenv("ROD_BROWSER_BIN"); envBin != "" {
+		defaults.Bin = envBin
 	}
 
 	opts := []headless_browser.Option{
