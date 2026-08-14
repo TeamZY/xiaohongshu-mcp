@@ -149,6 +149,15 @@ func submitPublishVideo(page *rod.Page, title, content string, tags []string, sc
 		return err
 	}
 
+	// 等待发布结果
+	slog.Info("开始等待发布结果")
 	time.Sleep(3 * time.Second)
+
+	if err := waitForPublishSuccess(page); err != nil {
+		slog.Warn("发布结果检测失败，但可能已成功", "error", err)
+	} else {
+		slog.Info("发布成功")
+	}
+
 	return nil
 }

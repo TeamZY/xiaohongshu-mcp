@@ -517,9 +517,9 @@ func clickPublishWidget(page *rod.Page, widget *rod.Element) error {
 	return nil
 }
 
-// waitForPublishSuccess 等待发布成功，通过 URL 变化判断
+// waitForPublishSuccess 等待发布成功，通过 URL 变化和页面成功提示综合判断
 func waitForPublishSuccess(page *rod.Page) error {
-	maxWait := 30 * time.Second
+	maxWait := 180 * time.Second
 	interval := 1 * time.Second
 	start := time.Now()
 
@@ -528,6 +528,13 @@ func waitForPublishSuccess(page *rod.Page) error {
 		url := page.MustInfo().URL
 		if strings.Contains(url, "/publish/success") || strings.Contains(url, "success") {
 			slog.Info("发布成功", "url", url)
+			return nil
+		}
+
+		// 检查是否有成功提示文案（小红书页面常见的成功提示）
+		hasSuccess, _, err := page.Has(".d-message-success, .success-message, .publish-success")
+		if err == nil && hasSuccess {
+			slog.Info("发布成功：检测到成功提示")
 			return nil
 		}
 
@@ -540,7 +547,7 @@ func waitForPublishSuccess(page *rod.Page) error {
 		time.Sleep(interval)
 	}
 
-	return errors.New("等待发布结果超时")
+	return errors.New("等待发布结果超时(180s)")
 }
 
 // waitAndClickTitleInput 在填写正文后等待 1 秒并回点标题输入框，增强后续交互稳定性
